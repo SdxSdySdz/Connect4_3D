@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,76 +7,66 @@ using UnityEngine.Events;
 [RequireComponent(typeof(Collider))]
 public class Peak : MonoBehaviour
 {
-    [SerializeField] private Game game;
-    private Move _move;
+    [SerializeField] private Vector2Int _boardCoordinates;
+    
     private Renderer _renderer;
     private Notation _notation;
     private PeakModel3D _model;
 
-    public Renderer Renderer => _renderer;
-    public float Height => _model.transform.lossyScale.y / 2f;
+    public event Action<Peak> OnMouseEntered;
+    public event Action OnMouseExited;
+
+    public Move AssociatedMove { get; private set; }
+    public float Height => _model.transform.lossyScale.y * 2f;
     public float Transparency
     {
-        get
-        {
-            return _renderer.material.color.a;
-        }
-
         set
         {
-            Color oldColor = _renderer.material.color;
-            Color newColor = new Color(oldColor.r, oldColor.g, oldColor.b, value);
-            _renderer.material.color = newColor;
-
-            oldColor = _notation.Text.color;
-            newColor = new Color(oldColor.r, oldColor.g, oldColor.b, value);
-            _notation.Text.color = newColor;
+            SetMaterialTransparency(value);
+            _notation.Transparency = value;
         }
     }
 
-
-    private void Start()
+    private void Awake()
     {
         _model = GetComponentInChildren<PeakModel3D>();
         _renderer = _model.gameObject.GetComponent<Renderer>();
-
         _notation = GetComponentInChildren<Notation>();
-
-        (int row, int column) = GetBoardCoordinates();
-        _move = new Move(row, column);
     }
-
-
+    
+    private void Start()
+    {
+        (int row, int column) = GetBoardCoordinates();
+        AssociatedMove = new Move(row, column);
+    }
+    
     public (int Row, int Column) GetBoardCoordinates()
     {
-        // All peaks has name = $"Peak{Row}{Column}"
-        int row;
-        int column;
-        if (int.TryParse(name[4].ToString(), out row) && int.TryParse(name[5].ToString(), out column))
-        {
-            return (row, column);
-        }
-        else
-        {
-            throw new System.Exception("Incorrect peak name");
-        }
+        return (_boardCoordinates.x, _boardCoordinates.y);
     }
-
-
-    private void OnMouseDown()
+    
+    public Vector3 GetStoneSpawnPosition(int peak)
     {
-        game.OnPeakClicked(_move);
+        Vector3 basePosition = transform.position - transform.up * Height / 2f;
+        Vector3 offset = transform.up * Height * (2 * peak + 1) / 8f;
+
+        return basePosition + offset;
     }
 
-
+    private void SetMaterialTransparency(float transparency)
+    {
+        Color oldColor = _renderer.material.color;
+        Color newColor = new Color(oldColor.r, oldColor.g, oldColor.b, transparency);
+        _renderer.material.color = newColor;
+    }
+    
     private void OnMouseEnter()
     {
-        game.OnPeakEnter(_move);
+        OnMouseEntered?.Invoke(this);
     }
-
-
+    
     private void OnMouseExit()
     {
-        game.OnPeakExit(_move);
+        OnMouseExited?.Invoke();
     }
 }

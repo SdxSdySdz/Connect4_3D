@@ -4,39 +4,43 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+
 public class Board
 {
     private readonly int _rowCount = 4;
     private readonly int _columnCount = 4;
     private readonly int _peakCount = 4;
-    // stores such peaks that _grid[row, column, _peakMap[row, column]] = 0 and _grid[row, column, _peakMap[row, column] - 1] = 1 or -1
     private int[,] _peakMap;
     private int[,,] _grid;
-    // private int[,,] _weightMap;
 
+    public ulong ZobristHash { get; private set; }
     public int RowCount => _rowCount;
     public int ColumnCount => _columnCount;
     public int PeakCount => _peakCount;
+    public int Size => RowCount * ColumnCount * PeakCount;
+    public int StoneCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (var peak in _peakMap)
+            {
+                count += peak;
+            }
 
+            return count;
+        }
+    }
+
+    
 
     public Board()
     {
         _peakMap = new int[_rowCount, _columnCount];
         _grid = new int[_rowCount, _columnCount, _peakCount];
+        ZobristHash = ZobristHasher.EmptyBoard;
     }
 
-    /*    public Board()
-        {
-            _peakMap = new int[_rowCount, _columnCount];
-    *//*        _weightMap = new int[_rowCount, _columnCount, _peakCount]
-            {
-                    { { 4, 1, 1, 4 }, { 1, 1, 1, 1 }, { 1, 1, 1, 1 }, { 4, 1, 1, 4 } },
-                    { { 1, 1, 1, 1 }, { 1, 4, 4, 1 }, { 1, 4, 4, 1 }, { 1, 1, 1, 1 } },
-                    { { 1, 1, 1, 1 }, { 1, 4, 4, 1 }, { 1, 4, 4, 1 }, { 1, 1, 1, 1 } },
-                    { { 4, 1, 1, 4 }, { 1, 1, 1, 1 }, { 1, 1, 1, 1 }, { 4, 1, 1, 4 } },
-            };*//*
-            _grid = new int[_rowCount, _columnCount, _peakCount];
-        }*/
 
     public void PlaceStone(PlayerColor playerColor, Move move)
     {
@@ -44,20 +48,33 @@ public class Board
         int column = move.Column;
         int peak = _peakMap[row, column];
         _grid[row, column, peak] = playerColor.ColorValue;
-
+        
         _peakMap[row, column] += 1;
+
+        ZobristHash ^= ZobristHasher.GetStoneHash(row, column, peak, playerColor);
     }
 
-    /*    public int GetWeight(int row, int column, int peak)
-        {
-            return _weightMap[row, column, peak];
-        }*/
+
+    public void RemoveStone(Move move)
+    {
+        int row = move.Row;
+        int column = move.Column;
+
+        _peakMap[row, column] -= 1; 
+        int peak = _peakMap[row, column];
+        int stone = _grid[row, column, peak];
+        _grid[row, column, peak] = 0;
+
+        PlayerColor playerColor = stone == 1 ? PlayerColor.White : PlayerColor.Black;
+        ZobristHash ^= ZobristHasher.GetStoneHash(row, column, peak, playerColor);
+    }
+
 
     public int GetStone(int row, int column, int peak)
     {
-        if (IsValidIndex(row, column, peak))
+        if (IsValidIndex(row, column, peak) == false)
         {
-            throw new Exception("Incorrect index");
+            throw new Exception($"Incorrect index [{row} {column} {peak}]");
         }
 
         return _grid[row, column, peak];
@@ -258,6 +275,8 @@ public class Board
                 }
             }
         }
+
+        board.ZobristHash = ZobristHash;
 
         return board;
     }

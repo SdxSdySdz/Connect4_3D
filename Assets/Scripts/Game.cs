@@ -2,119 +2,48 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Events;
 
 public class Game : MonoBehaviour
 {
-    [SerializeField] private BoardViewer _boardViewer;
+    // [SerializeField] protected BoardViewer _boardViewer;
+    [SerializeField] private History _history;
 
-    private GameState _gameState;
-    private Dictionary<char, int> _notationMap;
+    protected GameState _gameState;
+    protected bool _isOver;
 
-    private void Start()
+    public UnityEvent<GameState> MoveApplied;
+
+
+    protected virtual void Awake()
     {
-        _notationMap = new Dictionary<char, int>
-        {
-            {'A', 0 },
-            {'B', 1 },
-            {'C', 2 },
-            {'D', 3 },
-        };
-
         _gameState = GameState.NewGame;
-    }
-
-
-    public void OnPeakClicked(Move move)
-    {
-        List<(int Row, int Column, int Peak)> winningIndices;
-        if (_gameState.IsValidMove(move))
-        {
-            int row = move.Row;
-            int column = move.Column;
-            int peak = _gameState.Board.GetHighestPeak(row, column) + 1;
-
-            _boardViewer.SpawnStone(_gameState.PlayerToMove, move.Row, move.Column, peak);
-            _gameState = _gameState.ApplyMove(move);
-
-            if (_gameState.IsOver(out winningIndices))
-            {
-                _boardViewer.HighlightWinningStones(winningIndices);
-            }
-        }
-        else
-        {
-            OnIncorrectMove();
-        }
-    }
-
-
-    public void OnPeakEnter(Move move)
-    {
-        _boardViewer.HighlightPeak(move);
-    }
-
-
-    public void OnPeakExit(Move move)
-    {
-        _boardViewer.ResetHighlighting();
-    }
-
-
-    public void OnMoveButtonClicked(string moveNotation)
-    {
-        Move move = MoveFromNotation(moveNotation);
-        if (_gameState.IsValidMove(move))
-        {
-            _boardViewer.SpawnStone(_gameState.PlayerToMove, move.Row, move.Column, 0);
-            _gameState = _gameState.ApplyMove(move);  
-        }
-        else
-        {
-            OnIncorrectMove();
-        }
+        _isOver = false;
+        _history.Init(1, _gameState.Board.Size / 2);
     }
 
 
     public void OnReturnMoveButtonClicked()
     {
-        _boardViewer.DeleteLastStone();
         _gameState = _gameState.ReturnMove();
+        _isOver = false;
+        _history.ReturnMove();
     }
 
 
     public void OnResetButtonClicked()
     {
-        _boardViewer.DeleteAllStones();
         _gameState = GameState.NewGame;
+        _isOver = false;
+        _history.Clear();
     }
 
 
-    private void OnIncorrectMove()
+    protected void ApplyMove(Move move)
     {
+        _gameState = _gameState.ApplyMove(move);
+        MoveApplied?.Invoke(_gameState);
 
-    }
-
-
-    private Move MoveFromNotation(string moveNotation)
-    {
-        char letter = moveNotation[0];
-        string strNumber = $"{moveNotation[1]}";
-
-        Debug.Log($"Letter {letter}");
-        Debug.Log($"StrNumber {strNumber}");
-
-        if (Int32.TryParse(strNumber, out int row))
-        {
-            row--;
-            int column = _notationMap[letter];
-
-            Debug.Log($"row {row}");
-            Debug.Log($"column {column}");
-
-            return new Move(row, column);
-        }
-
-        throw new Exception();
-        
+        _history.Add(move);
     }
 }

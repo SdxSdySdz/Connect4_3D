@@ -6,213 +6,189 @@ using UnityEngine;
 
 public class BoardViewer : MonoBehaviour
 {
+    [SerializeField] private List<Peak> _peaksList;
     
     [Header("Game prefabs")]
-    [SerializeField] private GameObject _whiteStone;
-    [SerializeField] private GameObject _blackStone;
-    /*
-    [SerializeField] private GameObject _peakPrefab;
-    [SerializeField] private GameObject _platformPrefab;*/
+    [SerializeField] private Stone _whiteStone;
+    [SerializeField] private Stone _blackStone;
 
     [Header("Rotation")]
     [SerializeField] private float _rotationSpeed;
+
     [Header("Highlighting")]
     [Range(0, 1)]
     [SerializeField] private float _unselectedPeakTransparency;
-    [Range(0, 1)]
-    [SerializeField] private float _duration;
-
-    /*  
-        private readonly int _rowCount = 4;
-        private readonly int _columnCount = 4;
-        private readonly float _radiusPercent = 0.75f;*/
-
-    private GameObject[,,] _stones;
+    [SerializeField] private float _highlightingDuration;
+    [SerializeField] private float _unhighlightingDuration;
+    
+    private Stone[,,] _stones;
     private Peak[,] _peaks;
     private Stack<(int row, int column, int peak)> _spawnedIndicesOrder;
-
-    private float _highlightingProgressValue;
     private Coroutine _highlightingPeakCoroutine;
-
-
-    private void Start()
+    
+    private void OnEnable()
     {
-        _stones = new GameObject[4, 4, 4];
-        _peaks = new Peak[4, 4];
-        _spawnedIndicesOrder = new Stack<(int row, int column, int peak)>();
-
-        var peakContainer = GetComponentInChildren<PeakContainer>().gameObject;
-        foreach (var peak in peakContainer.GetComponentsInChildren<Peak>())
+        foreach (var peak in _peaks)
         {
-            (int row, int column) = peak.GetBoardCoordinates();
-            _peaks[row, column] = peak;
+            peak.OnMouseEntered += HighlightPeak;
+            peak.OnMouseExited += ResetHighlighting;
+        }
+    }
+    
+    private void OnDisable()
+    {
+        foreach (var peak in _peaks)
+        {
+            peak.OnMouseEntered -= HighlightPeak;
+            peak.OnMouseExited -= ResetHighlighting;
         }
     }
 
+    private void Awake()
+    {
+        _stones = new Stone[4, 4, 4];
+        _peaks = new Peak[4, 4];
+        _spawnedIndicesOrder = new Stack<(int row, int column, int peak)>();
+        
+        if (_peaksList.Count != 16)
+            throw new Exception();
+
+        InitPeaks();
+    }
 
     private void Update()
     {
         if (Input.GetMouseButton(1))
         {
             transform.Rotate(Vector3.up, -Input.GetAxis("Mouse X") * _rotationSpeed);
-            // transform.Rotate(_observerTransform.right, Input.GetAxis("Mouse Y") * _rotationSpeed, Space.World);
         }
     }
 
-
-    public void SpawnStone(PlayerColor playerColor, int row, int column, int peak)
+    public void OnMoveApplied(GameState gameState)
     {
+        
+        
+        Move move = gameState.LastMove;
+        int row = move.Row;
+        int column = move.Column;
+        int peak = gameState.Board.GetHighestPeak(row, column);
+        SpawnStone(gameState.PlayerColorToMove.Opposite, row, column, peak);
+    }
+    
+    public void OnReturnMoveButtonClicked()
+    {
+        TryDeleteLastStone();
+    }
+    
+    public void OnResetButtonClicked()
+    {
+        DeleteAllStones();
+    }
+
+    private void InitPeaks()
+    {
+        foreach (var peak in _peaksList)
+        {
+            (int row, int column) = peak.GetBoardCoordinates();
+            _peaks[row, column] = peak;
+        }
+    }
+    
+    private void StopLastSpawnedStoneAnimation()
+    {
+        if (_spawnedIndicesOrder.Count > 0)
+        {
+            var lastIndex = _spawnedIndicesOrder.Peek();
+            Stone lastStone = _stones[lastIndex.row, lastIndex.column, lastIndex.peak];
+            lastStone.StopLastMoveAnimation();
+        }
+    }
+    
+    private void SpawnStone(PlayerColor playerColor, int row, int column, int peak)
+    {
+        StopLastSpawnedStoneAnimation();
+        Stone stone = playerColor.IsWhite ? _whiteStone : _blackStone;
         Peak peakObject = _peaks[row, column];
-        float peakHeight = peakObject.Height;
 
-        GameObject stone;
-        if (playerColor.IsWhite)
-        {
-            stone = _whiteStone;
-        }
-        else if (playerColor.IsBlack)
-        {
-            stone = _blackStone;
-        }
-        else
-        {
-            throw new System.Exception("");
-        }
+        Vector3 spawnPosition = peakObject.GetStoneSpawnPosition(peak);
 
-        stone = Instantiate(stone, peakObject.gameObject.transform.position + Vector3.up * peakHeight * 2, Quaternion.identity, peakObject.gameObject.transform);
-        stone.transform.localScale = new Vector3(1, peakHeight, 1);
+        stone = Instantiate(stone, spawnPosition, Quaternion.identity, peakObject.transform);
+        stone.transform.localScale = new Vector3(1, peakObject.Height / 4f, 1);
+
+        stone.StartLastMoveAnimation();
+
         _stones[row, column, peak] = stone;
         _spawnedIndicesOrder.Push((row, column, peak));
     }
-
-    public void DeleteAllStones()
+    
+    private void DeleteAllStones()
     {
         foreach (var stone in _stones)
         {
             Destroy(stone);
         }
+
+        _stones = new Stone[4, 4, 4];
+        _spawnedIndicesOrder = new Stack<(int row, int column, int peak)>();
+    }
+    
+    private void TryDeleteLastStone()
+    {
+        if (_spawnedIndicesOrder.Count == 0) return;
+
+        var lastIndex = _spawnedIndicesOrder.Pop();
+        Stone lastStone = _stones[lastIndex.row, lastIndex.column, lastIndex.peak];
+
+        Destroy(lastStone);
+        _stones[lastIndex.row, lastIndex.column, lastIndex.peak] = null;
     }
 
-    public void DeleteLastStone()
+    private void HighlightPeak(Peak peak)
     {
-        if (_spawnedIndicesOrder.Count > 0)
-        {
-            var lastIndex = _spawnedIndicesOrder.Pop();
-            GameObject lastStone = _stones[lastIndex.row, lastIndex.column, lastIndex.peak];
-
-            Destroy(lastStone);
-
-            _stones[lastIndex.row, lastIndex.column, lastIndex.peak] = null;
-        }
+        ProvideHighlighting(ChangePeaksTransparencyExcept(peak, 1f, _unselectedPeakTransparency, _highlightingDuration));
+    }
+    
+    private void ResetHighlighting()
+    {
+        ProvideHighlighting(ChangePeaksTransparency(_unselectedPeakTransparency, 1f, _unhighlightingDuration));
     }
 
-
-    public void DeleteStone(int row, int column)
+    private void ProvideHighlighting(IEnumerator coroutine)
     {
-        throw new NotImplementedException();
-    }
-
-
-    public void ResetHighlighting()
-    {
-        if (Input.GetMouseButton(1) == false)
-        {
-            if (_highlightingPeakCoroutine != null)
-            {
-                StopCoroutine(_highlightingPeakCoroutine);
-            }
-
-            _highlightingPeakCoroutine = StartCoroutine(ChangePeakTransparencyExcept(Move.EmptyMove, _unselectedPeakTransparency, 1f, 0.1f));
-        }
-            
-
-       
-/*        for (int row = 0; row < _peaks.GetLength(0); row++)
-        {
-            for (int column = 0; column < _peaks.GetLength(1); column++)
-            {
-                _peaks[row, column].Transparency = 1f;
-            }
-        }*/
- 
-    }
-
-    public void HighlightPeak(Move move)
-    {
+        if (Input.GetMouseButton(1)) return;
         
-        if (Input.GetMouseButton(1) == false)
+        if (_highlightingPeakCoroutine != null)
         {
-            _peaks[move.Row, move.Column].Transparency = 1f;
-
-            if (_highlightingPeakCoroutine != null)
-            {
-                StopCoroutine(_highlightingPeakCoroutine);
-            }
-
-            _highlightingPeakCoroutine = StartCoroutine(ChangePeakTransparencyExcept(move, 1f, _unselectedPeakTransparency, 0.1f));
+            StopCoroutine(_highlightingPeakCoroutine);
         }
+
+        _highlightingPeakCoroutine = StartCoroutine(coroutine);
     }
-
-
-    public void HighlightWinningStones(List<(int Row, int Column, int Peak)> winningIndices)
+    
+    private IEnumerator ChangePeaksTransparencyExcept(Peak extraPeak, float fromTransparency, float toTransparency, float duration)
     {
-
-    }
-
-
-    private IEnumerator ChangePeakTransparencyExcept(Move move, float fromTransparency, float toTransparency, float duration)
-    {
-        Debug.LogError("Start cort");
-        var waitForEndOfFraim = new WaitForEndOfFrame();
+        var waitForEndOfFrame = new WaitForEndOfFrame();
         float transparency = fromTransparency;
+    
+        if (extraPeak != null)
+            extraPeak.Transparency = 1f;
         while (Mathf.Abs(transparency - toTransparency) > 0)
         {
-            for (int row = 0; row < _peaks.GetLength(0); row++)
+            foreach (var peak in _peaks)
             {
-                for (int column = 0; column < _peaks.GetLength(1); column++)
+                if (peak != extraPeak)
                 {
-                    if (row != move.Row || column != move.Column)
-                    {
-                        _peaks[row, column].Transparency = transparency;
-                    }
+                    peak.Transparency = transparency;
                 }
             }
 
             transparency = Mathf.MoveTowards(transparency, toTransparency, Time.deltaTime / duration);
-            yield return waitForEndOfFraim;
+            yield return waitForEndOfFrame;
         }
-
-        yield break;
     }
-
-    /*    private void SpawnEmptyBoard(Vector3 position)
-        {
-            var platform = Instantiate(_platformPrefab, position, Quaternion.identity, transform);
-
-            float platformHeight = _platformPrefab.transform.lossyScale.y;
-            float platformRadius = _platformPrefab.transform.lossyScale.x;
-
-            float peakHeight = _peakPrefab.transform.lossyScale.y;
-            float peakRadius = _peakPrefab.transform.lossyScale.x / 2f;
-
-            float scaleMultiplier = _radiusPercent * platformRadius * Mathf.Sqrt(2) / (_rowCount - 1);
-
-            for (int row = 0; row < _rowCount; row++)
-            {
-                for (int column = 0; column < _columnCount; column++)
-                {
-                    float z = column - (_rowCount - 1) / 2f;
-                    float x = -row + (_rowCount - 1) / 2f;
-
-                    x *= scaleMultiplier;
-                    z *= scaleMultiplier;
-
-                    Vector3 peakPosition = new Vector3(x, platformHeight + peakHeight, z);
-                    var peak = Instantiate(_peakPrefab, peakPosition, Quaternion.identity, transform);
-                    peak.name = $"Peak{row}{column}";
-
-                    _peaks[row, column] = peak;
-                }
-            }
-        }*/
+    
+    private IEnumerator ChangePeaksTransparency(float fromTransparency, float toTransparency, float duration)
+    {
+        yield return ChangePeaksTransparencyExcept(null, fromTransparency, toTransparency, duration);
+    }
 }

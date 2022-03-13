@@ -8,8 +8,16 @@ public class Notation : MonoBehaviour
 {
     private Text _text;
     private Transform _target;
-
-    public Text Text => _text;
+    
+    public float Transparency
+    {
+        set
+        {
+            Color oldColor = _text.color;
+            Color newColor = new Color(oldColor.r, oldColor.g, oldColor.b, value);
+            _text.color = newColor;
+        }
+    }
 
     private void Start()
     {
@@ -22,8 +30,14 @@ public class Notation : MonoBehaviour
     {
         if (_target != null)
         {
-            transform.LookAt(_target);
-            transform.Rotate(Vector3.up, 180);
+            OrientToTarget();
         }
+    }
+
+
+    private void OrientToTarget()
+    {
+        transform.LookAt(_target);
+        transform.Rotate(Vector3.up, 180);
     }
 }
